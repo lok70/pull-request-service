@@ -31,3 +31,9 @@ type PullRequestShort struct {
 	AuthorID        string            `json:"author_id"`
 	Status          PullRequestStatus `json:"status"`
 }
+
+// StatsDTO используется для возврата статистики по ревьюверам.
+type StatsDTO struct {
+	ReviewerID  string `json:"reviewer_id"`
+	ReviewCount int    `json:"review_count"`
+}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math/rand"
 
 	"pull-request-service/internal/model"
 	"pull-request-service/internal/repository"
@@ -16,12 +17,25 @@ type TeamRepository interface {
 
 // TeamService содержит бизнес-логику по созданию и получению команд.
 type TeamService struct {
-	repo TeamRepository
+	repo      TeamRepository
+	userRepo  UserRepository // <-- Добавили
+	prRepo    PRRepository   // <-- Добавили
+	txManager TransactionManager
 }
 
 // NewTeamService создаёт новый сервис для операций над командами.
-func NewTeamService(repo TeamRepository) *TeamService {
-	return &TeamService{repo: repo}
+func NewTeamService(
+	repo TeamRepository,
+	userRepo UserRepository,
+	prRepo PRRepository,
+	txManager TransactionManager,
+) *TeamService {
+	return &TeamService{
+		repo:      repo,
+		userRepo:  userRepo,
+		prRepo:    prRepo,
+		txManager: txManager,
+	}
 }
 
 // CreateTeam валидирует входные данные и создаёт команду с участниками.
@@ -67,4 +81,68 @@ func (s *TeamService) GetTeam(ctx context.Context, name string) (model.Team, err
 		}
 	}
 	return team, nil
+}
+
+// MassDeactivate деактивирует пользователей и переназначает/удаляет их из открытых PR.
+// MassDeactivate деактивирует пользователей и безопасно обновляет PR.
+func (s *TeamService) MassDeactivate(ctx context.Context, userIDs []string) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	return s.txManager.RunInTransaction(ctx, func(ctx context.Context) error {
+		if err := s.userRepo.DeactivateUsers(ctx, userIDs); err != nil {
+			return err
+		}
+
+		impactedPRsMap, err := s.prRepo.GetOpenPRsByReviewers(ctx, userIDs)
+		if err != nil {
+			return err
+		}
+
+		if len(impactedPRsMap) == 0 {
+			return nil
+		}
+
+		for oldUserID, prIDs := range impactedPRsMap {
+			oldUser, err := s.userRepo.GetByUserID(ctx, oldUserID)
+			if err != nil {
+				return err
+			}
+
+			for _, prID := range prIDs {
+				pr, err := s.prRepo.GetPR(ctx, prID)
+				if err != nil {
+					return err
+				}
+
+				exclude := []string{oldUserID, pr.AuthorID}
+				exclude = append(exclude, pr.AssignedReviewers...)
+
+				candidates, err := s.userRepo.ListActiveTeamMembersExcept(ctx, oldUser.TeamName, exclude)
+				if err != nil {
+					return err
+				}
+
+				if len(candidates) > 0 {
+					newReviewer := candidates[rand.Intn(len(candidates))]
+					if _, err := s.prRepo.ReassignReviewer(ctx, prID, oldUserID, newReviewer.UserID); err != nil {
+						return err
+					}
+				} else {
+					if err := s.prRepo.RemoveReviewer(ctx, prID, oldUserID); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
+// GetStats возвращает статистику (прокси метод)
+func (s *TeamService) GetStats(ctx context.Context) (interface{}, error) {
+	// Для простоты возвращаем DTO репозитория, но по хорошему надо мапить в модель
+	return s.prRepo.GetReviewerStats(ctx)
 }

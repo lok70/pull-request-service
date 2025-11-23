@@ -10,6 +10,7 @@ tags:
   - name: Teams
   - name: Users
   - name: PullRequests
+  - name: Stats
   - name: Health
 
 components:
@@ -123,6 +124,30 @@ components:
         status:
           type: string
           enum: [OPEN, MERGED]
+    # Новые схемы для дополнительных заданий
+    StatItem:
+      type: object
+      properties:
+        reviewer_id:
+          type: string
+          description: ID пользователя
+          example: "u1"
+        review_count:
+          type: integer
+          description: Количество назначенных ревью
+          example: 5
+    MassDeactivateRequest:
+      type: object
+      required:
+        - user_ids
+      properties:
+        user_ids:
+          type: array
+          description: Массив ID пользователей, которых нужно деактивировать
+          items:
+            type: string
+            example: "u1"
+          example: ["u1", "u2"]
 
 paths:
   /team/add:
@@ -198,6 +223,40 @@ paths:
                     is_active: true
         '404':
           description: Команда не найдена
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  # Новая ручка массовой деактивации
+  /team/deactivate:
+    post:
+      tags: [Teams]
+      summary: Массовая деактивация пользователей
+      description: Деактивирует пользователей по списку ID и безопасно переназначает их открытые PR на других участников команды.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MassDeactivateRequest'
+      responses:
+        '200':
+          description: Пользователи успешно деактивированы
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500':
+          description: Внутренняя ошибка сервера
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -422,3 +481,24 @@ paths:
                     pull_request_name: Add search
                     author_id: u1
                     status: OPEN
+
+  # Новая ручка для статистики
+  /stats:
+    get:
+      tags: [Stats]
+      summary: Получение статистики по ревьюверам
+      description: Возвращает список пользователей и количество назначенных на них ревью.
+      responses:
+        '200':
+          description: Успешный запрос
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatItem'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }

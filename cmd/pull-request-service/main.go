@@ -46,7 +46,7 @@ func main() {
 	txManager := repository.NewTransactionManager(db)
 
 	// 3. Инициализация сервисов
-	teamService := service.NewTeamService(teamRepo)
+	teamService := service.NewTeamService(teamRepo, userRepo, prRepo, txManager)
 	userService := service.NewUserService(userRepo)
 
 	// Внедряем txManager в PRService

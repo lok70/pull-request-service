@@ -35,10 +35,8 @@ services:
     ports:
       - "7002:8080"
     volumes:
-      # Монтируем локальный openapi.yaml внутрь контейнера по пути /openapi.yaml
       - ./openapi.yaml:/openapi.yaml:ro
     environment:
-      # Говорим swagger-ui, что спецификация лежит по пути /openapi.yaml
       - SWAGGER_JSON=/openapi.yaml
     depends_on:
       - app

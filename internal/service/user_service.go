@@ -13,6 +13,7 @@ type UserRepository interface {
 	GetByUserID(ctx context.Context, userID string) (model.User, error)
 	SetIsActive(ctx context.Context, userID string, isActive bool) (model.User, error)
 	ListActiveTeamMembersExcept(ctx context.Context, teamName string, exclude []string) ([]model.User, error)
+	DeactivateUsers(ctx context.Context, userIDs []string) error
 }
 
 // UserService содержит бизнес-логику, связанную с пользователями,

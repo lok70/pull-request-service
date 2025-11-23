@@ -16,6 +16,8 @@ import (
 type TeamService interface {
 	CreateTeam(ctx context.Context, team model.Team) (model.Team, error)
 	GetTeam(ctx context.Context, name string) (model.Team, error)
+	MassDeactivate(ctx context.Context, userIDs []string) error
+	GetStats(ctx context.Context) (interface{}, error)
 }
 
 // UserService описывает методы сервиса пользователей, используемые HTTP-слоем.
@@ -68,6 +70,7 @@ func (h *Handler) Router() http.Handler {
 	r.Route("/team", func(r chi.Router) {
 		r.Post("/add", h.handleTeamAdd)
 		r.Get("/get", h.handleTeamGet)
+		r.Post("/deactivate", h.handleMassDeactivate)
 	})
 
 	r.Route("/users", func(r chi.Router) {
@@ -80,6 +83,8 @@ func (h *Handler) Router() http.Handler {
 		r.Post("/merge", h.handlePRMerge)
 		r.Post("/reassign", h.handlePRReassign)
 	})
+
+	r.Get("/stats", h.handleStats)
 
 	return r
 }

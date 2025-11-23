@@ -53,3 +53,7 @@ type reassignResponse struct {
 	PR         model.PullRequest `json:"pr"`
 	ReplacedBy string            `json:"replaced_by"`
 }
+
+type massDeactivateRequest struct {
+	UserIDs []string `json:"user_ids"`
+}

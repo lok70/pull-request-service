@@ -23,6 +23,9 @@ type PRRepository interface {
 	MarkMerged(ctx context.Context, prID string, mergedAt time.Time) (model.PullRequest, error)
 	ReassignReviewer(ctx context.Context, prID, oldUserID, newUserID string) (model.PullRequest, error)
 	ListAssignedToUser(ctx context.Context, userID string) ([]model.PullRequestShort, error)
+	GetOpenPRsByReviewers(ctx context.Context, reviewerIDs []string) (map[string][]string, error)
+	GetReviewerStats(ctx context.Context) ([]model.StatsDTO, error)
+	RemoveReviewer(ctx context.Context, prID, reviewerID string) error
 }
 
 // PRService инкапсулирует бизнес-логику создания PR,
@@ -45,12 +48,10 @@ func NewPRService(prRepo PRRepository, userRepo UserRepository, txManager Transa
 // CreatePR создаёт новый pull request и автоматически назначает до двух ревьюверов
 // из команды автора. Валидирует вход и оборачивает ошибки репозитория в AppError.
 func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (model.PullRequest, error) {
-	// 1. Валидация входных данных
 	if input.PullRequestID == "" || input.PullRequestName == "" || input.AuthorID == "" {
 		return model.PullRequest{}, ErrBadRequest("pull_request_id, pull_request_name and author_id are required")
 	}
 
-	// 2. Проверка существования автора
 	author, err := s.userRepo.GetByUserID(ctx, input.AuthorID)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
@@ -64,7 +65,6 @@ func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (mode
 		}
 	}
 
-	// 3. Получение списка кандидатов (активные участники команды, кроме автора)
 	exclude := []string{author.UserID}
 	members, err := s.userRepo.ListActiveTeamMembersExcept(ctx, author.TeamName, exclude)
 	if err != nil {
@@ -76,7 +76,6 @@ func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (mode
 		}
 	}
 
-	// 4. Выбор ревьюверов (бизнес-логика)
 	reviewers := chooseReviewers(members, 2)
 	reviewerIDs := make([]string, 0, len(reviewers))
 	for _, u := range reviewers {
@@ -86,16 +85,12 @@ func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (mode
 	input.Status = model.StatusOpen
 	var pr model.PullRequest
 
-	// 5. СОХРАНЕНИЕ В ТРАНЗАКЦИИ
-	// Мы используем RunInTransaction, чтобы создание PR и запись ревьюверов прошли атомарно.
 	err = s.txManager.RunInTransaction(ctx, func(ctx context.Context) error {
 		var errTx error
-		// Репозиторий достанет транзакцию из контекста внутри CreatePRWithReviewers
 		pr, errTx = s.prRepo.CreatePRWithReviewers(ctx, input, reviewerIDs)
 		return errTx
 	})
 
-	// 6. Обработка ошибок транзакции
 	if err != nil {
 		if errors.Is(err, repository.ErrPRExists) {
 			return model.PullRequest{}, ErrDomain("PR_EXISTS", "PR id already exists")

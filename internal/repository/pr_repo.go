@@ -261,3 +261,84 @@ ORDER BY reviewer_id
 	}
 	return res, nil
 }
+
+// GetOpenPRsByReviewers находит открытые PR, где ревьюверами являются указанные пользователи.
+// Возвращает мапу: ReviewerID -> Список PRID, где он назначен.
+func (r *PRRepo) GetOpenPRsByReviewers(ctx context.Context, reviewerIDs []string) (map[string][]string, error) {
+	q := r.db.GetQueryExecutor(ctx)
+
+	rows, err := q.Query(ctx, `
+		SELECT pr.pull_request_id, r.reviewer_id
+		FROM pull_request_reviewers r
+		JOIN pull_requests pr ON pr.pull_request_id = r.pull_request_id
+		WHERE r.reviewer_id = ANY($1) AND pr.status = 'OPEN'
+	`, reviewerIDs)
+	if err != nil {
+		return nil, fmt.Errorf("query impacted prs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]string)
+	for rows.Next() {
+		var prID, revID string
+		if err := rows.Scan(&prID, &revID); err != nil {
+			return nil, err
+		}
+		result[revID] = append(result[revID], prID)
+	}
+	return result, nil
+}
+
+// StatsDTO для статистики
+type StatsDTO struct {
+	ReviewerID  string `json:"reviewer_id"`
+	ReviewCount int    `json:"review_count"`
+}
+
+// GetReviewerStats возвращает количество назначений по пользователям.
+func (r *PRRepo) GetReviewerStats(ctx context.Context) ([]model.StatsDTO, error) {
+	q := r.db.GetQueryExecutor(ctx)
+	rows, err := q.Query(ctx, `
+		SELECT reviewer_id, COUNT(*) 
+		FROM pull_request_reviewers 
+		GROUP BY reviewer_id 
+		ORDER BY COUNT(*) DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Используем тип из пакета model
+	var stats []model.StatsDTO
+
+	for rows.Next() {
+		var s model.StatsDTO
+		if err := rows.Scan(&s.ReviewerID, &s.ReviewCount); err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return stats, nil
+}
+
+// RemoveReviewer удаляет ревьювера из PR.
+// Используется, когда деактивированного пользователя некем заменить.
+func (r *PRRepo) RemoveReviewer(ctx context.Context, prID, reviewerID string) error {
+	q := r.db.GetQueryExecutor(ctx)
+
+	_, err := q.Exec(ctx, `
+		DELETE FROM pull_request_reviewers
+		WHERE pull_request_id = $1 AND reviewer_id = $2
+	`, prID, reviewerID)
+
+	if err != nil {
+		return fmt.Errorf("remove reviewer: %w", err)
+	}
+	return nil
+}

@@ -98,3 +98,17 @@ ORDER BY u.user_id
 
 	return users, nil
 }
+
+// DeactivateUsers массово деактивирует пользователей по списку ID.
+func (r *UserRepo) DeactivateUsers(ctx context.Context, userIDs []string) error {
+	q := r.db.GetQueryExecutor(ctx)
+	_, err := q.Exec(ctx, `
+		UPDATE users 
+		SET is_active = FALSE 
+		WHERE user_id = ANY($1)
+	`, userIDs)
+	if err != nil {
+		return fmt.Errorf("mass deactivate: %w", err)
+	}
+	return nil
+}
