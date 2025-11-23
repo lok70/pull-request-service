@@ -17,6 +17,11 @@ func (h *Handler) handlePRCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ValidateCreatePRRequest(req); err != nil {
+		h.writeError(w, handlerName, err)
+		return
+	}
+
 	prInput := model.PullRequest{
 		PullRequestID:   req.PullRequestID,
 		PullRequestName: req.PullRequestName,
@@ -47,6 +52,11 @@ func (h *Handler) handlePRMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ValidateMergePRRequest(req); err != nil {
+		h.writeError(w, handlerName, err)
+		return
+	}
+
 	ctx := r.Context()
 	pr, err := h.PRs.MergePR(ctx, req.PullRequestID)
 	if err != nil {
@@ -66,6 +76,11 @@ func (h *Handler) handlePRReassign(w http.ResponseWriter, r *http.Request) {
 	var req reassignRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeError(w, handlerName, service.ErrBadRequest("invalid JSON"))
+		return
+	}
+
+	if err := ValidateReassignRequest(req); err != nil {
+		h.writeError(w, handlerName, err)
 		return
 	}
 

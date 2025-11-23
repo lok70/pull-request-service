@@ -2,12 +2,15 @@ package http
 
 import (
 	"encoding/json"
-	"github.com/go-chi/chi/v5"
 	"log/slog"
 	"net/http"
 	"pull-request-service/internal/service"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 )
 
+// Handler агрегирует зависимости HTTP-слоя
 type Handler struct {
 	Teams *service.TeamService
 	Users *service.UserService
@@ -15,6 +18,7 @@ type Handler struct {
 	Log   *slog.Logger
 }
 
+// NewHandler создаёт и возвращает HTTP-обработчик c маршрутизатором и зависимостями сервисного слоя.
 func NewHandler(teams *service.TeamService, users *service.UserService, prs *service.PRService, log *slog.Logger) *Handler {
 	return &Handler{
 		Teams: teams,
@@ -24,8 +28,19 @@ func NewHandler(teams *service.TeamService, users *service.UserService, prs *ser
 	}
 }
 
+// Router настраивает HTTP-маршруты и middleware, включая CORS, и возвращает корневой роутер chi.
 func (h *Handler) Router() http.Handler {
 	r := chi.NewRouter()
+
+	// CORS: разрешаем swagger-ui на 7002 ходить к API 8080
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:7002"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
 
 	r.Get("/health", h.handleHealth)
 
@@ -75,7 +90,7 @@ func (h *Handler) writeError(w http.ResponseWriter, handlerName string, err erro
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))

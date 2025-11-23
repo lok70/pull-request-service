@@ -1,11 +1,22 @@
+version: "2"
+
 run:
-  timeout: 3m
+  go: "1.24"
+  timeout: 5m
+  tests: false
 
 linters:
+  # базовый набор стандартных линтеров
+  default: standard
+
+  # отдельно дожимаем те, которых нет в "standard"
   enable:
     - govet
     - staticcheck
-    - gosimple
-    - gofmt
+    - revive
     - errcheck
-    - ineffassign
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-use-default: false

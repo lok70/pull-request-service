@@ -11,18 +11,24 @@ import (
 )
 
 var (
-	ErrTeamExists   = errors.New("team already exists")
+	// ErrTeamExists возвращается, когда создаётся команда с уже существующим именем.
+	ErrTeamExists = errors.New("team already exists")
+	// ErrTeamNotFound возвращается, когда команда с указанным именем не найдена.
 	ErrTeamNotFound = errors.New("team not found")
 )
 
+// TeamRepo реализует репозиторий команд и их участников на базе PostgreSQL.
 type TeamRepo struct {
 	db *Postgres
 }
 
+// NewTeamRepo создаёт новый экземпляр TeamRepo c переданным подключением к PostgreSQL.
 func NewTeamRepo(db *Postgres) *TeamRepo {
 	return &TeamRepo{db: db}
 }
 
+// CreateTeamWithMembers создаёт команду с участниками и обновляет/создаёт пользователей,
+// привязывая их к команде по team_id. При конфликте по имени команды вернёт ErrTeamExists.
 func (r *TeamRepo) CreateTeamWithMembers(ctx context.Context, t model.Team) (model.Team, error) {
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
@@ -64,6 +70,8 @@ SET username = EXCLUDED.username,
 	return t, nil
 }
 
+// GetTeamByName возвращает команду с указанным именем и списком её участников.
+// Если команда не найдена, возвращает ErrTeamNotFound.
 func (r *TeamRepo) GetTeamByName(ctx context.Context, name string) (model.Team, error) {
 	rows, err := r.db.Pool.Query(ctx, `
 SELECT t.team_name, u.user_id, u.username, u.is_active
@@ -96,6 +104,7 @@ ORDER BY u.user_id
 			return model.Team{}, fmt.Errorf("scan row: %w", err)
 		}
 
+		// синхронизируем имя команды с тем, что реально лежит в БД
 		team.TeamName = teamName
 
 		if userID != nil && username != nil && isActive != nil {

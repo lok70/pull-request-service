@@ -13,19 +13,29 @@ import (
 )
 
 var (
+	// ErrPRNotFound возвращается, когда pull request с указанным идентификатором не найден в хранилище.
 	ErrPRNotFound = errors.New("pull request not found")
-	ErrPRExists   = errors.New("pull request already exists")
+	// ErrPRExists возвращается, когда создаётся pull request с уже существующим идентификатором.
+	ErrPRExists = errors.New("pull request already exists")
 )
 
+// PRRepo реализует репозиторий pull request'ов на базе PostgreSQL.
 type PRRepo struct {
 	db *Postgres
 }
 
+// NewPRRepo создаёт новый экземпляр PRRepo c переданным подключением к PostgreSQL.
 func NewPRRepo(db *Postgres) *PRRepo {
 	return &PRRepo{db: db}
 }
 
-func (r *PRRepo) CreatePRWithReviewers(ctx context.Context, pr model.PullRequest, reviewerIDs []string) (model.PullRequest, error) {
+// CreatePRWithReviewers создаёт pull request и привязывает к нему указанных ревьюверов
+// в рамках одной транзакции. При конфликте по идентификатору PR вернёт ErrPRExists.
+func (r *PRRepo) CreatePRWithReviewers(
+	ctx context.Context,
+	pr model.PullRequest,
+	reviewerIDs []string,
+) (model.PullRequest, error) {
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
 		return model.PullRequest{}, fmt.Errorf("begin tx: %w", err)
@@ -84,6 +94,8 @@ VALUES ($1, $2)
 	return created, nil
 }
 
+// GetPR возвращает pull request по идентификатору вместе со списком его ревьюверов.
+// Если PR не найден, возвращает ErrPRNotFound.
 func (r *PRRepo) GetPR(ctx context.Context, prID string) (model.PullRequest, error) {
 	row := r.db.Pool.QueryRow(ctx, `
 SELECT pull_request_id, pull_request_name, author_id, status, created_at, merged_at
@@ -116,6 +128,8 @@ WHERE pull_request_id = $1
 	return pr, nil
 }
 
+// MarkMerged помечает pull request как MERGED и устанавливает время мержа (если оно ещё не установлено).
+// Если PR не найден, возвращает ErrPRNotFound.
 func (r *PRRepo) MarkMerged(ctx context.Context, prID string, mergedAt time.Time) (model.PullRequest, error) {
 	row := r.db.Pool.QueryRow(ctx, `
 UPDATE pull_requests
@@ -150,6 +164,8 @@ RETURNING pull_request_id, pull_request_name, author_id, status, created_at, mer
 	return pr, nil
 }
 
+// ReassignReviewer заменяет ревьювера oldUserID на newUserID в указанном PR.
+// Если строка не найдена (PR или ревьювер не привязан), возвращает ErrPRNotFound.
 func (r *PRRepo) ReassignReviewer(ctx context.Context, prID, oldUserID, newUserID string) (model.PullRequest, error) {
 	cmdTag, err := r.db.Pool.Exec(ctx, `
 UPDATE pull_request_reviewers
@@ -166,6 +182,8 @@ WHERE pull_request_id = $1 AND reviewer_id = $2
 	return r.GetPR(ctx, prID)
 }
 
+// ListAssignedToUser возвращает список укороченных описаний PR,
+// в которых указанный пользователь назначен ревьювером.
 func (r *PRRepo) ListAssignedToUser(ctx context.Context, userID string) ([]model.PullRequestShort, error) {
 	rows, err := r.db.Pool.Query(ctx, `
 SELECT pr.pull_request_id,
@@ -199,6 +217,7 @@ ORDER BY pr.created_at DESC
 	return res, nil
 }
 
+// listReviewers возвращает список идентификаторов ревьюверов для заданного PR.
 func (r *PRRepo) listReviewers(ctx context.Context, q pgxQuerier, prID string) ([]string, error) {
 	rows, err := q.Query(ctx, `
 SELECT reviewer_id
@@ -225,6 +244,8 @@ ORDER BY reviewer_id
 	return res, nil
 }
 
+// pgxQuerier описывает минимальный интерфейс для выполнения запросов,
+// который реализуют как пул соединений, так и транзакция pgx.
 type pgxQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }

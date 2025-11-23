@@ -1,3 +1,4 @@
+// Package http реализует HTTP-обработчики и DTO поверх доменных сервисов.
 package http
 
 import "pull-request-service/internal/model"

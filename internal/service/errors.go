@@ -5,6 +5,8 @@ import (
 	"net/http"
 )
 
+// AppError описывает прикладную ошибку сервиса:
+// код для клиента, человекочитаемое сообщение, HTTP-статус и вложенная ошибка.
 type AppError struct {
 	Code    string
 	Message string
@@ -12,6 +14,7 @@ type AppError struct {
 	Err     error
 }
 
+// Error реализует интерфейс error для AppError.
 func (e *AppError) Error() string {
 	if e.Err != nil {
 		return fmt.Sprintf("%s: %v", e.Message, e.Err)
@@ -19,10 +22,12 @@ func (e *AppError) Error() string {
 	return e.Message
 }
 
+// Unwrap возвращает вложенную ошибку для поддержки errors.Is/As.
 func (e *AppError) Unwrap() error {
 	return e.Err
 }
 
+// ErrBadRequest конструирует AppError для ошибок валидации или некорректных запросов клиента.
 func ErrBadRequest(msg string) *AppError {
 	return &AppError{
 		Code:    "BAD_REQUEST",
@@ -31,6 +36,7 @@ func ErrBadRequest(msg string) *AppError {
 	}
 }
 
+// ErrNotFound конструирует AppError для ситуации, когда ресурс не найден.
 func ErrNotFound(msg string) *AppError {
 	return &AppError{
 		Code:    "NOT_FOUND",
@@ -39,6 +45,8 @@ func ErrNotFound(msg string) *AppError {
 	}
 }
 
+// ErrDomain конструирует AppError для доменных конфликтов (например, PR_EXISTS, TEAM_EXISTS).
+// Внутри подбирается подходящий HTTP-статус в зависимости от кода.
 func ErrDomain(code, msg string) *AppError {
 	status := http.StatusConflict
 	if code == "TEAM_EXISTS" {
@@ -54,6 +62,7 @@ func ErrDomain(code, msg string) *AppError {
 	}
 }
 
+// IsNotFound помогает определить, соответствует ли ошибка HTTP-статусу 404.
 func IsNotFound(err error) bool {
 	if err == nil {
 		return false

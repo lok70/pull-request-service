@@ -1,5 +1,6 @@
 package model
 
+// User описывает пользователя, его юзернейм, команду, статус активности.
 type User struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`

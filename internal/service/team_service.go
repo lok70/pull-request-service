@@ -8,19 +8,24 @@ import (
 	"pull-request-service/internal/repository"
 )
 
+// TeamRepository описывает контракт репозитория команд для бизнес-слоя.
 type TeamRepository interface {
 	CreateTeamWithMembers(ctx context.Context, team model.Team) (model.Team, error)
 	GetTeamByName(ctx context.Context, name string) (model.Team, error)
 }
 
+// TeamService содержит бизнес-логику по созданию и получению команд.
 type TeamService struct {
 	repo TeamRepository
 }
 
+// NewTeamService создаёт новый сервис для операций над командами.
 func NewTeamService(repo TeamRepository) *TeamService {
 	return &TeamService{repo: repo}
 }
 
+// CreateTeam валидирует входные данные и создаёт команду с участниками.
+// В случае конфликтов по имени команды возвращает доменную ошибку TEAM_EXISTS.
 func (s *TeamService) CreateTeam(ctx context.Context, t model.Team) (model.Team, error) {
 	if t.TeamName == "" {
 		return model.Team{}, ErrBadRequest("team_name must not be empty")
@@ -44,6 +49,7 @@ func (s *TeamService) CreateTeam(ctx context.Context, t model.Team) (model.Team,
 	return team, nil
 }
 
+// GetTeam возвращает команду по имени вместе с её участниками.
 func (s *TeamService) GetTeam(ctx context.Context, name string) (model.Team, error) {
 	if name == "" {
 		return model.Team{}, ErrBadRequest("team_name is required")

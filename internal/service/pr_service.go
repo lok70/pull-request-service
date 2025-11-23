@@ -1,3 +1,4 @@
+// Package service содержит бизнес-логику назначения ревьюверов и операций над командами и PR.
 package service
 
 import (
@@ -12,6 +13,7 @@ import (
 
 var rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
 
+// PRRepository описывает контракт репозитория для работы с pull request'ами.
 type PRRepository interface {
 	CreatePRWithReviewers(ctx context.Context, pr model.PullRequest, reviewerIDs []string) (model.PullRequest, error)
 	GetPR(ctx context.Context, prID string) (model.PullRequest, error)
@@ -20,11 +22,14 @@ type PRRepository interface {
 	ListAssignedToUser(ctx context.Context, userID string) ([]model.PullRequestShort, error)
 }
 
+// PRService инкапсулирует бизнес-логику создания PR,
+// назначения и переназначения ревьюверов и работы со списком PR пользователя.
 type PRService struct {
 	prRepo   PRRepository
 	userRepo UserRepository
 }
 
+// NewPRService создаёт новый сервис для работы с pull request'ами.
 func NewPRService(prRepo PRRepository, userRepo UserRepository) *PRService {
 	return &PRService{
 		prRepo:   prRepo,
@@ -32,6 +37,8 @@ func NewPRService(prRepo PRRepository, userRepo UserRepository) *PRService {
 	}
 }
 
+// CreatePR создаёт новый pull request и автоматически назначает до двух ревьюверов
+// из команды автора. Валидирует вход и оборачивает ошибки репозитория в AppError.
 func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (model.PullRequest, error) {
 	if input.PullRequestID == "" || input.PullRequestName == "" || input.AuthorID == "" {
 		return model.PullRequest{}, ErrBadRequest("pull_request_id, pull_request_name and author_id are required")
@@ -84,13 +91,16 @@ func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (mode
 	return pr, nil
 }
 
-func chooseReviewers(candidates []model.User, max int) []model.User {
-	if len(candidates) <= max {
+// chooseReviewers выбирает не более max ревьюверов из списка кандидатов.
+// При числе кандидатов ≤ max возвращает всех.
+func chooseReviewers(candidates []model.User, limit int) []model.User {
+	if len(candidates) <= limit {
 		return candidates
 	}
-	return candidates[:max]
+	return candidates[:limit]
 }
 
+// MergePR помечает pull request как MERGED (идемпотентно) и возвращает обновлённое состояние PR.
 func (s *PRService) MergePR(ctx context.Context, prID string) (model.PullRequest, error) {
 	if prID == "" {
 		return model.PullRequest{}, ErrBadRequest("pull_request_id is required")
@@ -110,6 +120,8 @@ func (s *PRService) MergePR(ctx context.Context, prID string) (model.PullRequest
 	return pr, nil
 }
 
+// ReassignReviewer переназначает одного из текущих ревьюверов PR на другого участника той же команды.
+// Учитывает статус PR, проверяет, что пользователь был назначен, и выбирает замену случайным образом.
 func (s *PRService) ReassignReviewer(ctx context.Context, prID, oldUserID string) (model.PullRequest, string, error) {
 	if prID == "" || oldUserID == "" {
 		return model.PullRequest{}, "", ErrBadRequest("pull_request_id and old_user_id are required")
@@ -200,6 +212,8 @@ func (s *PRService) ReassignReviewer(ctx context.Context, prID, oldUserID string
 	return updated, newReviewer.UserID, nil
 }
 
+// ListAssignedToUser возвращает список PR (в кратком виде),
+// в которых указанный пользователь назначен ревьювером.
 func (s *PRService) ListAssignedToUser(ctx context.Context, userID string) ([]model.PullRequestShort, error) {
 	if userID == "" {
 		return nil, ErrBadRequest("user_id is required")

@@ -1,3 +1,4 @@
+// Package main запускает HTTP-сервис назначения ревьюверов
 package main
 
 import (

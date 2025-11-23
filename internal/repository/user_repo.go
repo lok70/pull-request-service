@@ -11,17 +11,22 @@ import (
 )
 
 var (
+	// ErrUserNotFound возвращается, когда пользователь с указанным user_id не найден.
 	ErrUserNotFound = errors.New("user not found")
 )
 
+// UserRepo реализует репозиторий пользователей на базе PostgreSQL.
 type UserRepo struct {
 	db *Postgres
 }
 
+// NewUserRepo создаёт новый экземпляр UserRepo c переданным подключением к PostgreSQL.
 func NewUserRepo(db *Postgres) *UserRepo {
 	return &UserRepo{db: db}
 }
 
+// GetByUserID возвращает пользователя по user_id вместе с именем его команды.
+// Если пользователь не найден, возвращает ErrUserNotFound.
 func (r *UserRepo) GetByUserID(ctx context.Context, userID string) (model.User, error) {
 	row := r.db.Pool.QueryRow(ctx, `
 SELECT u.user_id, u.username, t.team_name, u.is_active
@@ -40,6 +45,8 @@ WHERE u.user_id = $1
 	return u, nil
 }
 
+// SetIsActive обновляет флаг активности пользователя и возвращает обновлённого пользователя
+// вместе с именем его команды. Если пользователь не найден, возвращает ErrUserNotFound.
 func (r *UserRepo) SetIsActive(ctx context.Context, userID string, isActive bool) (model.User, error) {
 	row := r.db.Pool.QueryRow(ctx, `
 UPDATE users u
@@ -59,6 +66,8 @@ RETURNING u.user_id, u.username, t.team_name, u.is_active
 	return u, nil
 }
 
+// ListActiveTeamMembersExcept возвращает список активных участников команды по её имени,
+// исключая переданные user_id (exclude). Используется для выбора кандидатов в ревьюверы.
 func (r *UserRepo) ListActiveTeamMembersExcept(ctx context.Context, teamName string, exclude []string) ([]model.User, error) {
 	rows, err := r.db.Pool.Query(ctx, `
 SELECT u.user_id, u.username, t.team_name, u.is_active
