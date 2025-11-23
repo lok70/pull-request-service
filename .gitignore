@@ -1,0 +1,30 @@
+# Binaries
+pull-request-service
+main
+*.exe
+*.dll
+*.so
+
+# Environment Variables
+.env
+.env.local
+
+# IDE & Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Test coverage artifacts
+coverage.out
+coverage.html
+
+# Vendor
+vendor/
+
+# Docker volumes
+pg_data/

@@ -35,14 +35,14 @@ type PRService interface {
 
 // Handler агрегирует зависимости HTTP-слоя
 type Handler struct {
-	Teams *service.TeamService
-	Users *service.UserService
-	PRs   *service.PRService
+	Teams TeamService
+	Users UserService
+	PRs   PRService
 	Log   *slog.Logger
 }
 
 // NewHandler создаёт и возвращает HTTP-обработчик c маршрутизатором и зависимостями сервисного слоя.
-func NewHandler(teams *service.TeamService, users *service.UserService, prs *service.PRService, log *slog.Logger) *Handler {
+func NewHandler(teams TeamService, users UserService, prs PRService, log *slog.Logger) *Handler {
 	return &Handler{
 		Teams: teams,
 		Users: users,

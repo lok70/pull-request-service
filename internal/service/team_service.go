@@ -83,11 +83,15 @@ func (s *TeamService) GetTeam(ctx context.Context, name string) (model.Team, err
 	return team, nil
 }
 
-// MassDeactivate деактивирует пользователей и переназначает/удаляет их из открытых PR.
 // MassDeactivate деактивирует пользователей и безопасно обновляет PR.
 func (s *TeamService) MassDeactivate(ctx context.Context, userIDs []string) error {
 	if len(userIDs) == 0 {
 		return nil
+	}
+
+	deactivatingSet := make(map[string]struct{}, len(userIDs))
+	for _, uid := range userIDs {
+		deactivatingSet[uid] = struct{}{}
 	}
 
 	return s.txManager.RunInTransaction(ctx, func(ctx context.Context) error {
@@ -104,8 +108,9 @@ func (s *TeamService) MassDeactivate(ctx context.Context, userIDs []string) erro
 			return nil
 		}
 
-		for oldUserID, prIDs := range impactedPRsMap {
-			oldUser, err := s.userRepo.GetByUserID(ctx, oldUserID)
+		for oldReviewerID, prIDs := range impactedPRsMap {
+
+			oldUser, err := s.userRepo.GetByUserID(ctx, oldReviewerID)
 			if err != nil {
 				return err
 			}
@@ -113,11 +118,19 @@ func (s *TeamService) MassDeactivate(ctx context.Context, userIDs []string) erro
 			for _, prID := range prIDs {
 				pr, err := s.prRepo.GetPR(ctx, prID)
 				if err != nil {
+					if errors.Is(err, repository.ErrPRNotFound) {
+						continue
+					}
 					return err
 				}
 
-				exclude := []string{oldUserID, pr.AuthorID}
+				exclude := make([]string, 0, len(pr.AssignedReviewers)+len(userIDs)+2)
+
+				exclude = append(exclude, pr.AuthorID)
+
 				exclude = append(exclude, pr.AssignedReviewers...)
+
+				exclude = append(exclude, userIDs...)
 
 				candidates, err := s.userRepo.ListActiveTeamMembersExcept(ctx, oldUser.TeamName, exclude)
 				if err != nil {
@@ -126,11 +139,12 @@ func (s *TeamService) MassDeactivate(ctx context.Context, userIDs []string) erro
 
 				if len(candidates) > 0 {
 					newReviewer := candidates[rand.Intn(len(candidates))]
-					if _, err := s.prRepo.ReassignReviewer(ctx, prID, oldUserID, newReviewer.UserID); err != nil {
+
+					if _, err := s.prRepo.ReassignReviewer(ctx, prID, oldReviewerID, newReviewer.UserID); err != nil {
 						return err
 					}
 				} else {
-					if err := s.prRepo.RemoveReviewer(ctx, prID, oldUserID); err != nil {
+					if err := s.prRepo.RemoveReviewer(ctx, prID, oldReviewerID); err != nil {
 						return err
 					}
 				}
@@ -143,6 +157,5 @@ func (s *TeamService) MassDeactivate(ctx context.Context, userIDs []string) erro
 
 // GetStats возвращает статистику (прокси метод)
 func (s *TeamService) GetStats(ctx context.Context) (interface{}, error) {
-	// Для простоты возвращаем DTO репозитория, но по хорошему надо мапить в модель
 	return s.prRepo.GetReviewerStats(ctx)
 }

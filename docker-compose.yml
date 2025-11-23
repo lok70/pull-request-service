@@ -3,15 +3,15 @@ services:
     image: postgres:18.1
     container_name: pull-request-service-db
     environment:
-      POSTGRES_DB: prreviewer
-      POSTGRES_USER: pruser
-      POSTGRES_PASSWORD: prpassword
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ./migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pruser -d prreviewer"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -22,7 +22,7 @@ services:
       dockerfile: Dockerfile
     container_name: pull-request-service
     environment:
-      DB_DSN: postgres://pruser:prpassword@db:5432/prreviewer?sslmode=disable
+      DB_DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
     depends_on:
       db:
         condition: service_healthy
@@ -40,3 +40,34 @@ services:
       - SWAGGER_JSON=/openapi.yaml
     depends_on:
       - app
+
+  # Запускаются только при E2E тестах
+  db_test:
+    image: postgres:18.1
+    container_name: pr-service-db-e2e
+    environment:
+      POSTGRES_DB: prtest
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5440:5432" # Порт 5440
+    volumes:
+      - ./migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d prtest"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+
+  app_test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pr-service-app-e2e
+    environment:
+      DB_DSN: postgres://test:test@db_test:5432/prtest?sslmode=disable
+    depends_on:
+      db_test:
+        condition: service_healthy
+    ports:
+      - "8090:8080" 

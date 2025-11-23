@@ -85,11 +85,14 @@ VALUES ($1, $2)
 // GetPR возвращает pull request по идентификатору вместе со списком его ревьюверов.
 // Если PR не найден, возвращает ErrPRNotFound.
 func (r *PRRepo) GetPR(ctx context.Context, prID string) (model.PullRequest, error) {
-	row := r.db.Pool.QueryRow(ctx, `
-SELECT pull_request_id, pull_request_name, author_id, status, created_at, merged_at
-FROM pull_requests
-WHERE pull_request_id = $1
-`, prID)
+	// ВАЖНО: Используем GetQueryExecutor, чтобы работать в контексте текущей транзакции
+	q := r.db.GetQueryExecutor(ctx)
+
+	row := q.QueryRow(ctx, `
+		SELECT pull_request_id, pull_request_name, author_id, status, created_at, merged_at
+		FROM pull_requests
+		WHERE pull_request_id = $1
+	`, prID)
 
 	var pr model.PullRequest
 	var status string
@@ -107,7 +110,8 @@ WHERE pull_request_id = $1
 	pr.CreatedAt = &createdAt
 	pr.MergedAt = mergedAt
 
-	reviewers, err := r.listReviewers(ctx, r.db.Pool, pr.PullRequestID)
+	// Передаем q (транзакцию) дальше для получения ревьюверов
+	reviewers, err := r.listReviewersWithExecutor(ctx, q, pr.PullRequestID)
 	if err != nil {
 		return model.PullRequest{}, err
 	}
@@ -238,14 +242,14 @@ type pgxQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
-// listReviewersWithExecutor — вспомогательный метод (нужно обновить старый listReviewers)
+// listReviewersWithExecutor — вспомогательный метод
 func (r *PRRepo) listReviewersWithExecutor(ctx context.Context, q DBTX, prID string) ([]string, error) {
 	rows, err := q.Query(ctx, `
-SELECT reviewer_id
-FROM pull_request_reviewers
-WHERE pull_request_id = $1
-ORDER BY reviewer_id
-`, prID)
+		SELECT reviewer_id
+		FROM pull_request_reviewers
+		WHERE pull_request_id = $1
+		ORDER BY reviewer_id
+	`, prID)
 	if err != nil {
 		return nil, fmt.Errorf("query reviewers: %w", err)
 	}
@@ -331,12 +335,10 @@ func (r *PRRepo) GetReviewerStats(ctx context.Context) ([]model.StatsDTO, error)
 // Используется, когда деактивированного пользователя некем заменить.
 func (r *PRRepo) RemoveReviewer(ctx context.Context, prID, reviewerID string) error {
 	q := r.db.GetQueryExecutor(ctx)
-
 	_, err := q.Exec(ctx, `
 		DELETE FROM pull_request_reviewers
 		WHERE pull_request_id = $1 AND reviewer_id = $2
 	`, prID, reviewerID)
-
 	if err != nil {
 		return fmt.Errorf("remove reviewer: %w", err)
 	}
