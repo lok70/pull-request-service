@@ -1,0 +1,30 @@
+services:
+  db_test:
+    image: postgres:18.1
+    container_name: pr-service-db-e2e
+    environment:
+      POSTGRES_DB: prtest
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5440:5432"
+    volumes:
+      - ./migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d prtest"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+
+  app_test:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: pr-service-app-e2e
+    environment:
+      DB_DSN: postgres://test:test@db_test:5432/prtest?sslmode=disable
+    depends_on:
+      db_test:
+        condition: service_healthy
+    ports:
+      - "8090:8080"

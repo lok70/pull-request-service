@@ -41,13 +41,10 @@ test-unit:
 	go test -v ./internal/...
 
 # Запуск E2E тестов
-# Запуск E2E тестов
 test-e2e:
-	$(DOCKER_COMPOSE) up -d --build db_test app_test
-
-	go test -v ./tests/e2e/... -count=1 || (echo "Tests failed" && exit 1)
-
-	$(DOCKER_COMPOSE) rm -s -f -v db_test app_test
+	$(DOCKER_COMPOSE) -p pull-request-e2e -f $(E2E_COMPOSE_FILE) --project-directory . up -d --build
+	go test -v ./tests/e2e/... -count=1
+	$(DOCKER_COMPOSE) -p pull-request-e2e -f $(E2E_COMPOSE_FILE) --project-directory . down -v
 
 #Инструменты
 
