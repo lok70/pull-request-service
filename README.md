@@ -6,6 +6,8 @@
 docker-compose up --build
 ```
 
+или через make up
+
 Сервис поднимется на `http://localhost:8080`.
 
 ## Конфигурация
