@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:18.1
+    container_name: pull-request-service-db
+    environment:
+      POSTGRES_DB: prreviewer
+      POSTGRES_USER: pruser
+      POSTGRES_PASSWORD: prpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./migrations/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pruser -d prreviewer"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pull-request-service
+    environment:
+      DB_DSN: postgres://pruser:prpassword@db:5432/prreviewer?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
