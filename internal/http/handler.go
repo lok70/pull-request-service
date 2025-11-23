@@ -1,14 +1,35 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"pull-request-service/internal/model"
 	"pull-request-service/internal/service"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 )
+
+// TeamService описывает методы сервиса команд, используемые HTTP-слоем.
+type TeamService interface {
+	CreateTeam(ctx context.Context, team model.Team) (model.Team, error)
+	GetTeam(ctx context.Context, name string) (model.Team, error)
+}
+
+// UserService описывает методы сервиса пользователей, используемые HTTP-слоем.
+type UserService interface {
+	SetIsActive(ctx context.Context, userID string, isActive bool) (model.User, error)
+}
+
+// PRService описывает методы сервиса pr, используемые HTTP-слоем.
+type PRService interface {
+	CreatePR(ctx context.Context, input model.PullRequest) (model.PullRequest, error)
+	MergePR(ctx context.Context, prID string) (model.PullRequest, error)
+	ReassignReviewer(ctx context.Context, prID, oldUserID string) (model.PullRequest, string, error)
+	ListAssignedToUser(ctx context.Context, userID string) ([]model.PullRequestShort, error)
+}
 
 // Handler агрегирует зависимости HTTP-слоя
 type Handler struct {

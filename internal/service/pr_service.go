@@ -11,7 +11,10 @@ import (
 	"pull-request-service/internal/repository"
 )
 
-var rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
+// TransactionManager описывает интерфейс для управления транзакциями (чтобы можно было мокать).
+type TransactionManager interface {
+	RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+}
 
 // PRRepository описывает контракт репозитория для работы с pull request'ами.
 type PRRepository interface {
@@ -25,25 +28,29 @@ type PRRepository interface {
 // PRService инкапсулирует бизнес-логику создания PR,
 // назначения и переназначения ревьюверов и работы со списком PR пользователя.
 type PRService struct {
-	prRepo   PRRepository
-	userRepo UserRepository
+	prRepo    PRRepository
+	userRepo  UserRepository
+	txManager TransactionManager
 }
 
 // NewPRService создаёт новый сервис для работы с pull request'ами.
-func NewPRService(prRepo PRRepository, userRepo UserRepository) *PRService {
+func NewPRService(prRepo PRRepository, userRepo UserRepository, txManager TransactionManager) *PRService {
 	return &PRService{
-		prRepo:   prRepo,
-		userRepo: userRepo,
+		prRepo:    prRepo,
+		userRepo:  userRepo,
+		txManager: txManager,
 	}
 }
 
 // CreatePR создаёт новый pull request и автоматически назначает до двух ревьюверов
 // из команды автора. Валидирует вход и оборачивает ошибки репозитория в AppError.
 func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (model.PullRequest, error) {
+	// 1. Валидация входных данных
 	if input.PullRequestID == "" || input.PullRequestName == "" || input.AuthorID == "" {
 		return model.PullRequest{}, ErrBadRequest("pull_request_id, pull_request_name and author_id are required")
 	}
 
+	// 2. Проверка существования автора
 	author, err := s.userRepo.GetByUserID(ctx, input.AuthorID)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
@@ -57,6 +64,7 @@ func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (mode
 		}
 	}
 
+	// 3. Получение списка кандидатов (активные участники команды, кроме автора)
 	exclude := []string{author.UserID}
 	members, err := s.userRepo.ListActiveTeamMembersExcept(ctx, author.TeamName, exclude)
 	if err != nil {
@@ -68,6 +76,7 @@ func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (mode
 		}
 	}
 
+	// 4. Выбор ревьюверов (бизнес-логика)
 	reviewers := chooseReviewers(members, 2)
 	reviewerIDs := make([]string, 0, len(reviewers))
 	for _, u := range reviewers {
@@ -75,8 +84,18 @@ func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (mode
 	}
 
 	input.Status = model.StatusOpen
+	var pr model.PullRequest
 
-	pr, err := s.prRepo.CreatePRWithReviewers(ctx, input, reviewerIDs)
+	// 5. СОХРАНЕНИЕ В ТРАНЗАКЦИИ
+	// Мы используем RunInTransaction, чтобы создание PR и запись ревьюверов прошли атомарно.
+	err = s.txManager.RunInTransaction(ctx, func(ctx context.Context) error {
+		var errTx error
+		// Репозиторий достанет транзакцию из контекста внутри CreatePRWithReviewers
+		pr, errTx = s.prRepo.CreatePRWithReviewers(ctx, input, reviewerIDs)
+		return errTx
+	})
+
+	// 6. Обработка ошибок транзакции
 	if err != nil {
 		if errors.Is(err, repository.ErrPRExists) {
 			return model.PullRequest{}, ErrDomain("PR_EXISTS", "PR id already exists")
@@ -88,6 +107,7 @@ func (s *PRService) CreatePR(ctx context.Context, input model.PullRequest) (mode
 			Err:     err,
 		}
 	}
+
 	return pr, nil
 }
 
@@ -192,7 +212,7 @@ func (s *PRService) ReassignReviewer(ctx context.Context, prID, oldUserID string
 	if len(candidates) == 1 {
 		newReviewer = candidates[0]
 	} else {
-		idx := rnd.Intn(len(candidates))
+		idx := rand.Intn(len(candidates))
 		newReviewer = candidates[idx]
 	}
 

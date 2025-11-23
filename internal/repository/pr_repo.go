@@ -12,13 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var (
-	// ErrPRNotFound возвращается, когда pull request с указанным идентификатором не найден в хранилище.
-	ErrPRNotFound = errors.New("pull request not found")
-	// ErrPRExists возвращается, когда создаётся pull request с уже существующим идентификатором.
-	ErrPRExists = errors.New("pull request already exists")
-)
-
 // PRRepo реализует репозиторий pull request'ов на базе PostgreSQL.
 type PRRepo struct {
 	db *Postgres
@@ -36,19 +29,12 @@ func (r *PRRepo) CreatePRWithReviewers(
 	pr model.PullRequest,
 	reviewerIDs []string,
 ) (model.PullRequest, error) {
-	tx, err := r.db.Pool.Begin(ctx)
-	if err != nil {
-		return model.PullRequest{}, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-		} else {
-			_ = tx.Commit(ctx)
-		}
-	}()
 
-	row := tx.QueryRow(ctx, `
+	// 1. Получаем исполнителя (Транзакцию или Пул)
+	q := r.db.GetQueryExecutor(ctx)
+
+	// 2. Выполняем запросы через q, а не через r.db.Pool
+	row := q.QueryRow(ctx, `
 INSERT INTO pull_requests (pull_request_id, pull_request_name, author_id, status)
 VALUES ($1, $2, $3, $4)
 RETURNING pull_request_id, pull_request_name, author_id, status, created_at, merged_at
@@ -59,7 +45,7 @@ RETURNING pull_request_id, pull_request_name, author_id, status, created_at, mer
 	var createdAt time.Time
 	var mergedAt *time.Time
 
-	if err = row.Scan(&created.PullRequestID, &created.PullRequestName, &created.AuthorID, &status, &createdAt, &mergedAt); err != nil {
+	if err := row.Scan(&created.PullRequestID, &created.PullRequestName, &created.AuthorID, &status, &createdAt, &mergedAt); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return model.PullRequest{}, ErrPRExists
@@ -79,13 +65,15 @@ INSERT INTO pull_request_reviewers (pull_request_id, reviewer_id)
 VALUES ($1, $2)
 `, created.PullRequestID, rid)
 		}
-		br := tx.SendBatch(ctx, batch)
-		if err = br.Close(); err != nil {
+		// Используем q для отправки батча
+		br := q.SendBatch(ctx, batch)
+		if err := br.Close(); err != nil {
 			return model.PullRequest{}, fmt.Errorf("insert reviewers: %w", err)
 		}
 	}
 
-	reviewers, err := r.listReviewers(ctx, tx, created.PullRequestID)
+	// Для чтения ревьюверов тоже передаем q, чтобы видеть изменения внутри текущей транзакции
+	reviewers, err := r.listReviewersWithExecutor(ctx, q, created.PullRequestID)
 	if err != nil {
 		return model.PullRequest{}, err
 	}
@@ -248,4 +236,28 @@ ORDER BY reviewer_id
 // который реализуют как пул соединений, так и транзакция pgx.
 type pgxQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// listReviewersWithExecutor — вспомогательный метод (нужно обновить старый listReviewers)
+func (r *PRRepo) listReviewersWithExecutor(ctx context.Context, q DBTX, prID string) ([]string, error) {
+	rows, err := q.Query(ctx, `
+SELECT reviewer_id
+FROM pull_request_reviewers
+WHERE pull_request_id = $1
+ORDER BY reviewer_id
+`, prID)
+	if err != nil {
+		return nil, fmt.Errorf("query reviewers: %w", err)
+	}
+	defer rows.Close()
+
+	res := make([]string, 0)
+	for rows.Next() {
+		var rid string
+		if err := rows.Scan(&rid); err != nil {
+			return nil, fmt.Errorf("scan reviewer: %w", err)
+		}
+		res = append(res, rid)
+	}
+	return res, nil
 }

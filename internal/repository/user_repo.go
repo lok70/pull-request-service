@@ -10,11 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var (
-	// ErrUserNotFound возвращается, когда пользователь с указанным user_id не найден.
-	ErrUserNotFound = errors.New("user not found")
-)
-
 // UserRepo реализует репозиторий пользователей на базе PostgreSQL.
 type UserRepo struct {
 	db *Postgres

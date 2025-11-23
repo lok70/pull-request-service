@@ -10,13 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var (
-	// ErrTeamExists возвращается, когда создаётся команда с уже существующим именем.
-	ErrTeamExists = errors.New("team already exists")
-	// ErrTeamNotFound возвращается, когда команда с указанным именем не найдена.
-	ErrTeamNotFound = errors.New("team not found")
-)
-
 // TeamRepo реализует репозиторий команд и их участников на базе PostgreSQL.
 type TeamRepo struct {
 	db *Postgres
